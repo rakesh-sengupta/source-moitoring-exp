@@ -23,7 +23,7 @@
 //  (e.g. load it from a small separate config.js that is .gitignored).
 // =====================================================================
 
-const FOLDER_ID = "https://drive.google.com/drive/folders/1mTTuyeCNNvfo4k1chhj6e4zMBKyDXwDV?usp=drive_link";
+const FOLDER_ID = "https://drive.google.com/drive/folders/1mTTuyeCNNvfo4k1chhj6e4zMBKyDXwDV";
 const LOG_SHEET_NAME = "submissions";   // a log sheet is created in the same folder
 
 function doPost(e) {
