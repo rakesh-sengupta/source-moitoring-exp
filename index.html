@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sentence memory study</title>
+<script src="https://unpkg.com/jspsych@7.3.4"></script>
+<script src="https://unpkg.com/@jspsych/plugin-html-keyboard-response@1.1.3"></script>
+<script src="https://unpkg.com/@jspsych/plugin-html-button-response@1.1.3"></script>
+<script src="https://unpkg.com/@jspsych/plugin-instructions@1.1.4"></script>
+<script src="https://unpkg.com/@jspsych/plugin-survey-text@1.1.3"></script>
+<script src="https://unpkg.com/@jspsych/plugin-call-function@1.1.3"></script>
+<link rel="stylesheet" href="https://unpkg.com/jspsych@7.3.4/css/jspsych.css">
+<script src="stimuli.js"></script>
+<style>
+  body { background: #fafafa; }
+  .jspsych-content { max-width: 760px; font-family: Georgia, "Times New Roman", serif; }
+  .sent   { font-size: 24px; line-height: 1.5; text-align: left; margin: 30px 0 18px; min-height: 3.2em; }
+  .label  { font-family: Helvetica, Arial, sans-serif; font-size: 16px; letter-spacing: .08em;
+            color: #444; text-align: left; }
+  .prompt { font-family: Helvetica, Arial, sans-serif; font-size: 16px; color: #666; text-align: left; }
+  .hint   { font-family: Helvetica, Arial, sans-serif; font-size: 14px; color: #888; margin-top: 24px; }
+  .q      { font-family: Helvetica, Arial, sans-serif; font-size: 18px; margin: 18px 0 8px; }
+  .instr  { text-align: left; font-family: Helvetica, Arial, sans-serif; font-size: 17px; line-height: 1.5; }
+  .instr h2 { font-size: 20px; }
+  .archive { border: 1px solid #ccc; background: #fffdf5; padding: 14px 18px; }
+  .hidden  { display: none; }
+  .locked  { pointer-events: none; opacity: .35; }
+  .cursor::after { content: "▌"; animation: blink 1s steps(1) infinite; color: #999; }
+  @keyframes blink { 50% { opacity: 0; } }
+</style>
+</head>
+<body></body>
+<script>
+// =====================================================================
+//  CONFIG
+// =====================================================================
+const SAVE_URL = null;            // e.g. "https://yourserver.example/save" — POST {pid, session, csv}
+const LOCAL_SAVE = true;          // also trigger a CSV download at the end
+const TYPE_CPS = 45;              // typewriter speed (chars/sec) in the co-produced block
+const S2_STUDY_SUBSET = 30;       // study items re-tested at 48 h (of 60)
+
+const CONDITIONS = ["marked", "unmarked", "coproduced"];
+const ORDERS = [
+  ["marked","unmarked","coproduced"], ["marked","coproduced","unmarked"],
+  ["unmarked","marked","coproduced"], ["unmarked","coproduced","marked"],
+  ["coproduced","marked","unmarked"], ["coproduced","unmarked","marked"]
+];
+const SET_ROTATIONS = [["A","B","C"],["B","C","A"],["C","A","B"]]; // sets for order slots 1..3
+
+// =====================================================================
+//  PARTICIPANT / SESSION
+// =====================================================================
+const P = new URLSearchParams(location.search);
+const SESSION = parseInt(P.get("session") || "1", 10);
+let PID = P.get("pid");
+if (!PID) PID = prompt("Participant ID:") || ("anon" + Date.now());
+const pidNum = [...PID].reduce((a, c) => a + c.charCodeAt(0), 0);
+const ORDER = P.get("order") !== null ? ORDERS[parseInt(P.get("order"), 10) % 6] : ORDERS[pidNum % 6];
+const ROT   = P.get("rot")   !== null ? SET_ROTATIONS[parseInt(P.get("rot"), 10) % 3] : SET_ROTATIONS[pidNum % 3];
+
+// condition -> set letter, given order slot i gets set ROT[i]
+const COND_SET = {}; ORDER.forEach((c, i) => COND_SET[c] = ROT[i]);
+
+const jsPsych = initJsPsych({
+  on_finish: saveData,
+  show_progress_bar: true,
+  auto_update_progress_bar: true
+});
+jsPsych.data.addProperties({ pid: PID, session: SESSION, order: ORDER.join("-"),
+  set_marked: COND_SET.marked, set_unmarked: COND_SET.unmarked, set_coproduced: COND_SET.coproduced });
+
+// study items tagged with their condition
+function itemsFor(cond) {
+  return STIMULI.sets[COND_SET[cond]].map(it => ({ ...it, condition: cond, item_type: "study" }));
+}
+const ALL_STUDY = CONDITIONS.flatMap(itemsFor);
+
+// =====================================================================
+//  HELPERS
+// =====================================================================
+const srcLabel = s => s === "ai" ? "AI" : "HUMAN";
+
+function typeOut(el, text, cps, done) {
+  let i = 0; el.classList.add("cursor");
+  const t = setInterval(() => {
+    el.textContent = text.slice(0, ++i);
+    if (i >= text.length) { clearInterval(t); el.classList.remove("cursor"); done(); }
+  }, 1000 / cps);
+}
+
+function saveData() {
+  const data = jsPsych.data.get();
+  if (SAVE_URL) {
+    fetch(SAVE_URL, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pid: PID, session: SESSION, csv: data.csv() }) }).catch(() => {});
+  }
+  if (LOCAL_SAVE) data.localSave("csv", `${PID}_s${SESSION}.csv`);
+  document.body.innerHTML = `<div class="instr" style="max-width:600px;margin:80px auto">
+    <h2>Thank you</h2><p>Your responses have been recorded. You may close this window.</p></div>`;
+}
+
+const instr = (pages) => ({ type: jsPsychInstructions, pages: pages.map(p => `<div class="instr">${p}</div>`),
+  show_clickable_nav: true, allow_backward: false });
+
+// =====================================================================
+//  STUDY TRIALS (one builder per condition)
+// =====================================================================
+function studyMarked(it) {
+  return {
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus: `<div class="sent">${it.text}</div><div class="label">SOURCE: ${srcLabel(it.source)}</div>
+               <div class="hint">Press SPACE to continue</div>`,
+    choices: [" "],
+    data: { phase: "study", condition: "marked", item_id: it.id, true_source: it.source }
+  };
+}
+
+function studyUnmarked(it) {
+  return {
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus: `<div class="sent">${it.text}</div><div class="hint">Press SPACE to continue</div>`,
+    choices: [" "],
+    data: { phase: "study", condition: "unmarked", item_id: it.id, true_source: it.source }
+  };
+}
+
+// Co-produced = two trials: (1) the action, (2) the reveal + keep.
+function studyCoproduced(it) {
+  const ai = it.source === "ai";
+  const header = ai ? `<div class="prompt">Topic: ${it.prompt}</div>`
+                    : `<div class="prompt">Archive entry: ${it.prompt}</div>`;
+  const action = {
+    type: jsPsychHtmlButtonResponse,
+    stimulus: header + `<div class="sent"></div>`,
+    choices: [ai ? "Generate sentence" : "Retrieve sentence"],
+    data: { phase: "study", condition: "coproduced", step: "action", item_id: it.id, true_source: it.source }
+  };
+  const reveal = {
+    type: jsPsychHtmlButtonResponse,
+    stimulus: header + `<div class="sent ${ai ? "" : "archive"}" id="reveal"></div>`,
+    choices: ["Keep this sentence"],
+    data: { phase: "study", condition: "coproduced", step: "keep", item_id: it.id, true_source: it.source },
+    on_load: () => {
+      const btn = document.querySelector("#jspsych-html-button-response-button-0");
+      const el = document.getElementById("reveal");
+      btn.classList.add("locked");
+      if (ai) typeOut(el, it.text, TYPE_CPS, () => btn.classList.remove("locked"));
+      else { el.textContent = it.text; setTimeout(() => btn.classList.remove("locked"), 600); }
+    }
+  };
+  return [action, reveal];
+}
+
+const BLOCK_INSTR = {
+  marked: `<h2>Reading block</h2>
+    <p>You will read a series of short historical sentences, one at a time. Each sentence has a label
+    underneath it showing where it came from: <b>HUMAN</b> (written by a person) or <b>AI</b>
+    (generated by an artificial intelligence system).</p>
+    <p>Read each sentence and its label carefully. Press the space bar when you are ready to move on.
+    You will be asked questions about these sentences later.</p>`,
+  unmarked: `<h2>Reading block</h2>
+    <p>You will read a series of short historical sentences, one at a time.</p>
+    <p><b>Half of the sentences in this block were generated by an AI system and half were written
+    by a person. They are not marked.</b></p>
+    <p>Read each sentence carefully. Press the space bar when you are ready to move on.
+    You will be asked questions about these sentences later.</p>`,
+  coproduced: `<h2>Reading block</h2>
+    <p>In this block you will produce the sentences yourself. For each topic you will see either a
+    <b>Generate</b> button, which asks an AI system to write a sentence on that topic, or a
+    <b>Retrieve</b> button, which fetches a sentence written by a person from an archive.</p>
+    <p>Click the button, read the sentence that appears, then click <b>Keep this sentence</b> to
+    move on. You will be asked questions about these sentences later.</p>`
+};
+
+function studyBlock(cond) {
+  const items = jsPsych.randomization.shuffle(itemsFor(cond));
+  const trials = items.flatMap(it =>
+    cond === "marked" ? [studyMarked(it)] : cond === "unmarked" ? [studyUnmarked(it)] : studyCoproduced(it));
+  return { timeline: [instr([BLOCK_INSTR[cond]]), ...trials] };
+}
+
+// =====================================================================
+//  FILLER (content questions)
+// =====================================================================
+const filler = {
+  timeline: [
+    instr([`<h2>Questions about the sentences</h2>
+      <p>You will now answer some questions about <i>what the sentences said</i>. Type a short answer
+      to each. If you cannot remember, make your best guess.</p>`]),
+    ...jsPsych.randomization.shuffle(STIMULI.content_questions).map(cq => ({
+      type: jsPsychSurveyText,
+      questions: [{ prompt: cq.q, required: true, rows: 2 }],
+      data: { phase: "filler", item_id: cq.item, expected: cq.answer }
+    }))
+  ]
+};
+
+// =====================================================================
+//  TEST TRIALS: recognition -> source -> confidence -> belief, per item
+// =====================================================================
+function testItem(it) {
+  const sentence = `<div class="sent">${it.text}</div>`;
+  const base = { phase: "test", item_id: it.id, item_type: it.item_type, condition: it.condition || "foil",
+                 true_source: it.source };
+  const q = (measure, prompt, choices) => ({
+    type: jsPsychHtmlButtonResponse,
+    stimulus: sentence + `<div class="q">${prompt}</div>`,
+    choices,
+    data: { ...base, measure },
+    on_finish: d => { d.response_label = choices[d.response]; }
+  });
+  return { timeline: [
+    q("recognition", "Did you see this sentence in the reading phase?", ["Yes", "No"]),
+    q("source",      "Was this sentence written by a human or generated by AI?", ["Human", "AI"]),
+    q("confidence",  "How confident are you in that answer?", ["1 – Guess", "2", "3", "4 – Certain"]),
+    q("belief",      "How likely is it that this sentence is historically accurate?",
+                     ["1 – Very unlikely", "2", "3", "4", "5 – Very likely"])
+  ] };
+}
+
+function testPhase(studyItems, foils) {
+  const items = jsPsych.randomization.shuffle([
+    ...studyItems, ...foils.map(f => ({ ...f, item_type: "foil", condition: "foil" }))
+  ]);
+  return { timeline: [
+    instr([`<h2>Memory test</h2>
+      <p>You will now see sentences one at a time. Some you read earlier; some are new.
+      For each sentence you will answer four questions. There are no labels this time —
+      answer from memory. Work at your own pace.</p>`]),
+    ...items.map(testItem)
+  ] };
+}
+
+// =====================================================================
+//  TIMELINE
+// =====================================================================
+const timeline = [];
+
+if (SESSION === 1) {
+  timeline.push(instr([
+    `<h2>Welcome</h2>
+     <p>This study is about memory for short historical sentences. It has three reading blocks,
+     a set of questions about the content, and a memory test. It takes about 55 minutes.</p>
+     <p>Please work in a quiet place and do not take notes. You will be asked to complete a short
+     (10-minute) follow-up online in two days.</p>`,
+    `<h2>Consent</h2>
+     <p>[Insert approved consent text here.]</p>
+     <p>By clicking Next you confirm that you have read the information and agree to take part.</p>`
+  ]));
+  ORDER.forEach(cond => timeline.push(studyBlock(cond)));
+  timeline.push(filler);
+  timeline.push(testPhase(ALL_STUDY, STIMULI.foils_s1));
+  timeline.push(instr([
+    `<h2>Debrief</h2>
+     <p>Thank you. This study examined how well people remember whether a sentence was written by a
+     person or generated by an AI system, and whether that depends on how the sentence was encountered.
+     Some sentences in every block were AI-generated. If you would like your data withdrawn, tell the
+     experimenter now.</p>
+     <p>You will receive a link for the follow-up in two days. Please click Next to finish.</p>`
+  ]));
+} else {
+  // Session 2 (48 h): re-test a deterministic subset + fresh foils, no study phase.
+  jsPsych.randomization.setSeed(PID + "-s2");
+  const subset = jsPsych.randomization.sampleWithoutReplacement(ALL_STUDY, Math.min(S2_STUDY_SUBSET, ALL_STUDY.length));
+  timeline.push(instr([
+    `<h2>Welcome back</h2>
+     <p>This is the follow-up to the sentence study you did two days ago. You will see sentences
+     one at a time; some you read then, some are new. Answer the four questions for each from memory.
+     It takes about 10 minutes.</p>`
+  ]));
+  timeline.push(testPhase(subset, STIMULI.foils_s2));
+  timeline.push(instr([`<h2>Thank you</h2><p>That completes the study. Click Next to submit your responses.</p>`]));
+}
+
+jsPsych.run(timeline);
+</script>
+</html>
