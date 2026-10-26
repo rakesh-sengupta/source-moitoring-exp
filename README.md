@@ -1,6 +1,6 @@
 # Source-monitoring experiment (cue availability at encoding)
 
-jsPsych 7.3 experiment, the follow-up to Manvi Yadav's pilot on source memory for AI-generated text.
+jsPsych 7.3 experiment, the follow-up to pilot on source memory for AI-generated text.
 Participants read sentences in three blocks (marked / unmarked-informed / co-produced), then answer
 recognition, source, confidence and belief questions; a second session retests after 48 h.
 
@@ -44,29 +44,6 @@ instead, add `&order=0..5&rot=0..2`.
 | Site loads but is blank | Open the browser console (F12). Usually `stimuli.js` is missing or has a syntax error (a missing comma after editing stimuli is the commonest). |
 | Old version still showing | Hard-reload (Ctrl+Shift+R); Pages can take 1-2 minutes after a green run. |
 
-## Saving data to Google Drive (once)
-
-1. Make a Drive folder for the data. Its ID is the part of the URL after `/folders/`.
-2. https://script.google.com -> New project -> paste `gdrive/Code.gs`. Put the folder **ID**
-   (not the whole URL) in `FOLDER_ID`. Save.
-3. Deploy -> New deployment -> Web app. Execute as: **Me**. Who has access: **Anyone**. Authorise.
-4. Copy the URL ending in `/exec` into `GDRIVE_URL` near the top of `index.html`.
-5. Open that `/exec` URL in a browser. It should show `"ok":true` and your folder's name.
-   If it shows an error, fix the folder ID or re-authorise.
-6. Test: open the experiment with `?pid=TEST`, click through, and check that `TEST_s1.csv`
-   appears in the folder.
-
-After any edit to `Code.gs`: Deploy -> Manage deployments -> edit -> Version: **New version**,
-or the old code keeps running. If Drive saving fails, the participant's browser downloads the
-CSV instead and asks them to send it to the experimenter. **Do not rename those files.**
-
-## Before collecting real data
-
-- Replace the placeholder sentences in `stimuli.js`: 3 sets x 20 (10 human from real sources,
-  10 AI), 10 + 10 foils, 15-20 content questions. Keep the field names.
-- Screening: keep an AI sentence only if >= 4 of 5 raters call it human; drop a human sentence if
-  >= 2 of 5 raters call it AI.
-- Replace `[INSERT IRB-APPROVED CONSENT TEXT BEFORE RUNNING.]` in `index.html`.
 
 ## Analysis
 
