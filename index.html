@@ -55,9 +55,16 @@ const P = new URLSearchParams(location.search);
 const SESSION = parseInt(P.get("session") || "1", 10);
 let PID = P.get("pid");
 if (!PID) PID = prompt("Participant ID:") || ("anon" + Date.now());
+// Counterbalancing: one of 18 cells (6 orders x 3 set rotations) per participant.
+// Uses the numeric part of the PID so sequential IDs 001..018 cover every cell once
+// (N = 54 or 72 balances exactly). Falls back to a character hash for non-numeric IDs.
+// (Previous version used hash % 6 and hash % 3, which locked order to rotation:
+//  only 6 of 18 cells were reachable and set A could never be co-produced.)
 const pidNum = [...PID].reduce((a, c) => a + c.charCodeAt(0), 0);
-const ORDER = P.get("order") !== null ? ORDERS[parseInt(P.get("order"), 10) % 6] : ORDERS[pidNum % 6];
-const ROT   = P.get("rot")   !== null ? SET_ROTATIONS[parseInt(P.get("rot"), 10) % 3] : SET_ROTATIONS[pidNum % 3];
+const pidInt = parseInt((PID.match(/\d+/) || [""])[0], 10);
+const CELL   = Number.isNaN(pidInt) ? pidNum % 18 : (((pidInt - 1) % 18) + 18) % 18;
+const ORDER = P.get("order") !== null ? ORDERS[parseInt(P.get("order"), 10) % 6] : ORDERS[Math.floor(CELL / 3)];
+const ROT   = P.get("rot")   !== null ? SET_ROTATIONS[parseInt(P.get("rot"), 10) % 3] : SET_ROTATIONS[CELL % 3];
 
 // condition -> set letter, given order slot i gets set ROT[i]
 const COND_SET = {}; ORDER.forEach((c, i) => COND_SET[c] = ROT[i]);
@@ -70,7 +77,7 @@ const jsPsych = initJsPsych({
       <h2>Thank you</h2><p>Your responses have been recorded. You may close this window.</p></div>`;
   }
 });
-jsPsych.data.addProperties({ pid: PID, session: SESSION, order: ORDER.join("-"),
+jsPsych.data.addProperties({ pid: PID, session: SESSION, cell: CELL, order: ORDER.join("-"),
   set_marked: COND_SET.marked, set_unmarked: COND_SET.unmarked, set_coproduced: COND_SET.coproduced,
   started: new Date().toISOString(), user_agent: navigator.userAgent,
   is_mobile: /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) });
